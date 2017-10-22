@@ -58,14 +58,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nCmdShow) {
     srand(time(NULL));
 
-    for (int i = 0; i < GAS_COUNT; ++i) {
-        gases.push_back(new GasParticle());
-    }
-
-    for (auto it: gases) {
-        InitializeGasParticle(it);
-    }
-
     HWND hwnd;               /* This is the handle for our window */
     MSG messages;            /* Here messages to the application are saved */
     WNDCLASSEX wincl;        /* Data structure for the windowclass */
@@ -108,7 +100,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     /* Make the window visible on the screen */
     ShowWindow(hwnd, nCmdShow);
 
-    SendMessageA(HWND_BROADCAST, CONNECT_LEFT, reinterpret_cast<WPARAM>(GAS_HWND), 0);
+    SendMessageA(HWND_BROADCAST, CONNECT_RIGHT, reinterpret_cast<WPARAM>(GAS_HWND), 0);
 
     //B.hwnd=hwnd;
     /* Run the message loop. It will run until GetMessage() returns 0 */
@@ -123,46 +115,27 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     return messages.wParam;
 }
 
-void InitializeGasParticle(GasParticle *gas) {
-    gas->radius = CmToPixels(GAS_RADIUS);
-    gas->dx = PAIN_BALL_DX * randomlyGenerate1OrMinus1();
-    gas->dy = PAIN_BALL_DY * randomlyGenerate1OrMinus1();
-
-    gas->startX = CmToPixels(PAIN_START_POSITION_X_LEFT) + CmToPixels(rand()) % (PAIN_WIDTH * 10) +
-                  CmToPixels(rand()) % (PAIN_WIDTH * 4);
-    gas->startY = CmToPixels(PAIN_START_POSITION_Y) + CmToPixels(rand()) % (PAIN_HEIGHT * 10) +
-                  CmToPixels(rand()) % (PAIN_HEIGHT * 4);
-
-    gas->x = gas->startX;
-    gas->y = gas->startY;
-}
-
 LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     PAINTSTRUCT ps;
     HDC hdc;
     RECT rect;
-    const WORD ID_TIMER = 1;
+    const WORD ID_TIMER = 2;
     GetClientRect(hwnd, &rect);
 
-    if (message == PARTICLE_MOVES_LEFT) {
-        std::cout << "moves left " << wParam << std::endl;
-        GasParticle *gas = new GasParticle();
+    if (message==PARTICLE_MOVES_RIGHT){
+        GasParticle * gas = new GasParticle();
         gas->dy = lParam;
         gas->y = wParam;
-        gas->x = rect.right;
         gas->radius = CmToPixels(GAS_RADIUS);
-        gas->dx = -PAIN_BALL_DX;
+        gas->x = rect.left;
+        gas->dx = PAIN_BALL_DX;
         gas->hwnd = GAS_HWND;
 
         gases.push_back(gas);
-    } else if (message == CONNECT_RIGHT && !connected) {
-        OTHER_CONTAINER_HALF_HWND = reinterpret_cast<HWND>(wParam);
-        std::cout << "CONNECT_RIGHT wparam: " << wParam << std::endl;
-        std::cout << "OUR hwnd: ";
-        std::cout << reinterpret_cast<WPARAM>(GAS_HWND) << std::endl;
-
-        SendMessageA(OTHER_CONTAINER_HALF_HWND, CONNECT_LEFT, reinterpret_cast<WPARAM>(GAS_HWND), 0);
+    } else if (message == CONNECT_LEFT && !connected) {
         connected = true;
+        OTHER_CONTAINER_HALF_HWND = reinterpret_cast<HWND>(wParam);
+        SendMessageA(OTHER_CONTAINER_HALF_HWND, CONNECT_RIGHT, reinterpret_cast<WPARAM>(GAS_HWND), 0);
     } else
         switch (message) {
             case WM_CREATE:
@@ -203,13 +176,13 @@ void MoveGasParticles(HWND hwnd, RECT rect) {
         if (gas->y >= rect.bottom - gas->radius) {
             gas->y = rect.bottom - gas->radius;
             gas->dy *= -1; //odwrocenie
-        } else if (gas->x <= rect.left) {
-            gas->x = rect.left + gas->radius;
+        } else if (gas->x >= rect.right) {
+            gas->x = rect.right - gas->radius;
             gas->dx *= -1;
         } else if (gas->y <= 0) {
             gas->dy *= -1;
-        } else if (gas->x > rect.right) {
-            SendMessageA(OTHER_CONTAINER_HALF_HWND, PARTICLE_MOVES_RIGHT, gas->y, gas->dy);
+        } else if (gas->x < rect.left) {
+            SendMessageA(OTHER_CONTAINER_HALF_HWND, PARTICLE_MOVES_LEFT, gas->y, gas->dy);
             toRemove.push_back(gas);
         } else {
             for (auto it: gases) {
