@@ -2,15 +2,19 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
-#include <time.h>
+#include <ctime>
 
-#define GAS_RADIUS 0.4
-#define PAIN_WIDTH 10
-#define PAIN_HEIGHT 10
-#define PAIN_START_POSITION_Y 1
-#define PAIN_START_POSITION_X_LEFT 0.1
-#define PAIN_BALL_DX 10
-#define PAIN_BALL_DY 2
+#define GAS_RADIUS 125
+#define APP_WIDTH 10
+#define APP_HEIGHT 10
+#define GAS_DX 10
+#define GAS_DY 2
+
+#define SETMAPMODE() {\
+	GetClientRect(hwnd, &rect);\
+	SetViewportOrgEx(hdc, rect.right/2, rect.bottom/2, NULL);\
+	SetMapMode(hdc, MM_LOMETRIC);\
+	}
 
 typedef struct GasParticle {
     HWND hwnd;
@@ -39,11 +43,15 @@ int CONNECT_LEFT = RegisterWindowMessage("CONNECT_LEFT");
 
 LRESULT CALLBACK WindowProcedure(HWND, UINT, WPARAM, LPARAM);
 
-void PaintTable(HDC *hdc, RECT rect, int width);
+int randint(int min, int max){
+    return rand() % (max + 1) + min;
+}
 
-void PaintGasParticle(HDC *, RECT, BOOL visibility = TRUE);
+void PaintBoard(HDC *hdc, RECT rect);
 
-void InitializeGasParticle(GasParticle *gas);
+void PaintGasParticle(HDC *, BOOL visibility = TRUE);
+
+void InitializeGasParticle(GasParticle *gas, RECT rect);
 
 void MoveGasParticles(HWND hwnd, RECT rect);
 
@@ -89,8 +97,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             WS_OVERLAPPEDWINDOW, /* default window */
             CW_USEDEFAULT,       /* Windows decides the position */
             CW_USEDEFAULT,       /* were the window ends up on the screen */
-            CmToPixels(PAIN_WIDTH) - GetSystemMetrics(SM_CXSIZE),    /* The programs width */
-            CmToPixels(PAIN_HEIGHT),/* and height in pixels */
+            CmToPixels(APP_WIDTH) - GetSystemMetrics(SM_CXSIZE),    /* The programs width */
+            CmToPixels(APP_HEIGHT),/* and height in pixels */
             HWND_DESKTOP,        /* The window is a child-window to desktop */
             NULL,                /* No menu */
             hInstance,       /* Program Instance handler */
@@ -102,7 +110,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     SendMessageA(HWND_BROADCAST, CONNECT_RIGHT, reinterpret_cast<WPARAM>(GAS_HWND), 0);
 
-    //B.hwnd=hwnd;
     /* Run the message loop. It will run until GetMessage() returns 0 */
     while (GetMessage(&messages, NULL, 0, 0)) {
         /* Translate virtual-key messages into character messages */
@@ -119,23 +126,26 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
     PAINTSTRUCT ps;
     HDC hdc;
     RECT rect;
-    const WORD ID_TIMER = 2;
+    const WORD ID_TIMER = 1;
     GetClientRect(hwnd, &rect);
 
-    if (message==PARTICLE_MOVES_RIGHT){
-        GasParticle * gas = new GasParticle();
+    if (message == PARTICLE_MOVES_RIGHT) {
+        GasParticle *gas = new GasParticle();
+        hdc = GetDC(hwnd);
+        SETMAPMODE();
+        DPtoLP(hdc, (PPOINT) &rect, 2);
         gas->dy = lParam;
         gas->y = wParam;
-        gas->radius = CmToPixels(GAS_RADIUS);
         gas->x = rect.left;
-        gas->dx = PAIN_BALL_DX;
+        gas->radius = GAS_RADIUS;
+        gas->dx = GAS_DX;
         gas->hwnd = GAS_HWND;
 
         gases.push_back(gas);
     } else if (message == CONNECT_LEFT && !connected) {
-        connected = true;
         OTHER_CONTAINER_HALF_HWND = reinterpret_cast<HWND>(wParam);
         SendMessageA(OTHER_CONTAINER_HALF_HWND, CONNECT_RIGHT, reinterpret_cast<WPARAM>(GAS_HWND), 0);
+        connected = true;
     } else
         switch (message) {
             case WM_CREATE:
@@ -143,18 +153,22 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
                     MessageBox(hwnd, "Cannot create timer!", "Fatal error!", MB_ICONSTOP);
             case WM_PAINT:
                 hdc = BeginPaint(hwnd, &ps);
-                PaintTable(&hdc, rect, 5);
+                PaintBoard(&hdc, rect);
+                SETMAPMODE();
+                DPtoLP(hdc, (PPOINT) &rect, 2);
                 if (connected)
                     MoveGasParticles(hwnd, rect);
-                PaintGasParticle(&hdc, rect);
+                PaintGasParticle(&hdc);
                 EndPaint(hwnd, &ps);
                 return 0;
             case WM_TIMER:
                 hdc = GetDC(hwnd);
                 if (connected) {
-                    PaintGasParticle(&hdc, rect, FALSE);
+                    SETMAPMODE();
+                    DPtoLP(hdc, (PPOINT) &rect, 2);
+                    PaintGasParticle(&hdc, FALSE);
                     MoveGasParticles(hwnd, rect);
-                    PaintGasParticle(&hdc, rect, TRUE);
+                    PaintGasParticle(&hdc, TRUE);
                 }
                 ReleaseDC(hwnd, hdc);
                 break;
@@ -164,7 +178,6 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
             default:
                 return DefWindowProc(hwnd, message, wParam, lParam);
         }
-
     return 0;
 }
 
@@ -173,13 +186,13 @@ void MoveGasParticles(HWND hwnd, RECT rect) {
         gas->x += gas->dx;
         gas->y += gas->dy;
 
-        if (gas->y >= rect.bottom - gas->radius) {
-            gas->y = rect.bottom - gas->radius;
+        if (gas->y < rect.bottom + gas->radius) {
+            gas->y = rect.bottom + gas->radius;
             gas->dy *= -1; //odwrocenie
-        } else if (gas->x >= rect.right) {
+        } else if (gas->x > rect.right - gas->radius) {
             gas->x = rect.right - gas->radius;
             gas->dx *= -1;
-        } else if (gas->y <= 0) {
+        } else if (gas->y > rect.top - gas->radius) {
             gas->dy *= -1;
         } else if (gas->x < rect.left) {
             SendMessageA(OTHER_CONTAINER_HALF_HWND, PARTICLE_MOVES_LEFT, gas->y, gas->dy);
@@ -202,7 +215,6 @@ void MoveGasParticles(HWND hwnd, RECT rect) {
                 }
             }
         }
-
     }
 
     for (auto gasToRemove: toRemove) {
@@ -214,20 +226,13 @@ void MoveGasParticles(HWND hwnd, RECT rect) {
         toRemove.clear();
 }
 
-int randomlyGenerate1OrMinus1() {
-    if (rand() % 2 == 0)
-        return -1;
-    else
-        return 1;
-}
-
-void PaintTable(HDC *hdc, RECT rect, int width) {
+void PaintBoard(HDC *hdc, RECT rect) {
     HBRUSH hBrush = CreateSolidBrush(RGB(10, 20, 30));
     SelectObject(*hdc, hBrush);
     Rectangle(*hdc, rect.left, rect.top, rect.right, rect.bottom);
 }
 
-void PaintGasParticle(HDC *hdc, RECT rect, BOOL visibility) {
+void PaintGasParticle(HDC *hdc, BOOL visibility) {
     HPEN hPen;
     HBRUSH hBrush;
 

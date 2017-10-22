@@ -5,12 +5,10 @@
 #include <ctime>
 
 #define GAS_RADIUS 125
-#define PAIN_WIDTH 10
-#define PAIN_HEIGHT 10
-#define PAIN_START_POSITION_Y 10
-#define PAIN_START_POSITION_X_LEFT 0.1
-#define PAIN_BALL_DX 10
-#define PAIN_BALL_DY 2
+#define APP_WIDTH 10
+#define APP_HEIGHT 10
+#define GAS_DX 10
+#define GAS_DY 2
 
 #define SETMAPMODE() {\
 	GetClientRect(hwnd, &rect);\
@@ -45,11 +43,15 @@ int CONNECT_LEFT = RegisterWindowMessage("CONNECT_LEFT");
 
 LRESULT CALLBACK WindowProcedure(HWND, UINT, WPARAM, LPARAM);
 
+int randint(int min, int max){
+    return rand() % (max + 1) + min;
+}
+
 void PaintBoard(HDC *hdc, RECT rect);
 
 void PaintGasParticle(HDC *, BOOL visibility = TRUE);
 
-void InitializeGasParticle(GasParticle *gas);
+void InitializeGasParticle(GasParticle *gas, RECT rect);
 
 void MoveGasParticles(HWND hwnd, RECT rect);
 
@@ -66,10 +68,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     for (int i = 0; i < GAS_COUNT; ++i) {
         gases.push_back(new GasParticle());
-    }
-
-    for (auto it: gases) {
-        InitializeGasParticle(it);
     }
 
     HWND hwnd;               /* This is the handle for our window */
@@ -103,8 +101,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             WS_OVERLAPPEDWINDOW, /* default window */
             CW_USEDEFAULT,       /* Windows decides the position */
             CW_USEDEFAULT,       /* were the window ends up on the screen */
-            CmToPixels(PAIN_WIDTH) - GetSystemMetrics(SM_CXSIZE),    /* The programs width */
-            CmToPixels(PAIN_HEIGHT),/* and height in pixels */
+            CmToPixels(APP_WIDTH) - GetSystemMetrics(SM_CXSIZE),    /* The programs width */
+            CmToPixels(APP_HEIGHT),/* and height in pixels */
             HWND_DESKTOP,        /* The window is a child-window to desktop */
             NULL,                /* No menu */
             hInstance,       /* Program Instance handler */
@@ -128,13 +126,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     return messages.wParam;
 }
 
-void InitializeGasParticle(GasParticle *gas) {
+void InitializeGasParticle(GasParticle *gas, RECT rect) {
     gas->radius = GAS_RADIUS;
-    gas->dx = PAIN_BALL_DX * randomlyGenerate1OrMinus1();
-    gas->dy = PAIN_BALL_DY * randomlyGenerate1OrMinus1();
+    gas->dx = GAS_DX * randomlyGenerate1OrMinus1();
+    gas->dy = GAS_DY * randomlyGenerate1OrMinus1();
 
-    gas->startX = -326-2*gas->radius;
-    gas->startY = 0;
+    gas->startX = randomlyGenerate1OrMinus1()*randint(rect.left+gas->radius, rect.right-2*gas->radius);
+    gas->startY = randomlyGenerate1OrMinus1()*randint(rect.bottom+2*gas->radius, rect.top-gas->radius);
 
     gas->x = gas->startX;
     gas->y = gas->startY;
@@ -146,9 +144,6 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
     RECT rect;
     const WORD ID_TIMER = 1;
     GetClientRect(hwnd, &rect);
-    SETMAPMODE();
-    DPtoLP(hdc, (PPOINT) &rect, 2);
-    std::cout << rect.right << " " << rect.left << " " << rect.top << " " << rect.bottom << std::endl;
 
     if (message == PARTICLE_MOVES_LEFT) {
         GasParticle *gas = new GasParticle();
@@ -156,7 +151,7 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
         gas->y = wParam;
         gas->x = rect.right;
         gas->radius = GAS_RADIUS;
-        gas->dx = -PAIN_BALL_DX;
+        gas->dx = -GAS_DX;
         gas->hwnd = GAS_HWND;
 
         gases.push_back(gas);
@@ -174,6 +169,11 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
                 PaintBoard(&hdc, rect);
                 SETMAPMODE();
                 DPtoLP(hdc, (PPOINT) &rect, 2);
+                std::cout << rect.right << " " << rect.left << " " << rect.top << " " << rect.bottom << std::endl;
+                for (auto it: gases) {
+                    InitializeGasParticle(it, rect);
+                }
+
                 if (connected)
                     MoveGasParticles(hwnd, rect);
                 PaintGasParticle(&hdc);
@@ -204,13 +204,13 @@ void MoveGasParticles(HWND hwnd, RECT rect) {
         gas->x += gas->dx;
         gas->y += gas->dy;
 
-        if (gas->y <= rect.bottom - 2*gas->radius) {
+        if (gas->y < rect.bottom + gas->radius) {
             gas->y = rect.bottom + gas->radius;
             gas->dy *= -1; //odwrocenie
-        } else if (gas->x <= -rect.left - 2 * gas->radius) {
-            gas->x = -rect.left - gas->radius;
+        } else if (gas->x < rect.left) {
+            gas->x = rect.left;
             gas->dx *= -1;
-        } else if (gas->y >= rect.bottom) {
+        } else if (gas->y > rect.top - gas->radius) {
             gas->dy *= -1;
         } else if (gas->x > rect.right) {
             SendMessageA(OTHER_CONTAINER_HALF_HWND, PARTICLE_MOVES_RIGHT, gas->y, gas->dy);
